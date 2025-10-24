@@ -116,16 +116,17 @@ struct phBoundMaterial1
 #ifdef RAGE_FORMATS_GAME_NY
 	uint8_t pad;
 	uint16_t roomId : 5;
-	uint16_t f5 : 1; // "sidewalk spec 1"
+	uint16_t walkablePath : 1; // "sidewalk spec 1"
 	uint16_t f6 : 1; // "sidewalk spec 2"
 	uint16_t f7 : 1;
-	uint16_t stairs : 1;
-	uint16_t blockGrip : 1;
-	uint16_t blockClimb : 1;
-	uint16_t shootThrough : 1;
-	uint16_t blockJumpOver : 1;
-	uint16_t f13 : 1; // "sidewalk spec 3"
-	uint16_t seeThrough : 1;
+
+	uint16_t stairs : 1;			// STAIRS
+	uint16_t blockGrip : 1;			// NOT CLIMBABLE
+	uint16_t blockClimb : 1;		// SEE THROUGH
+	uint16_t shootThrough : 1;		// SHOOT THROUGH
+	uint16_t blockJumpOver : 1;     // NOT COVER
+	uint16_t f13 : 1;
+	uint16_t seeThrough : 1;        // NO CAM COL ALLOW CLIPPING
 	uint16_t f15 : 1;
 #elif defined(RAGE_FORMATS_GAME_FIVE) || defined(RAGE_FORMATS_GAME_PAYNE)
 	uint8_t proceduralId;

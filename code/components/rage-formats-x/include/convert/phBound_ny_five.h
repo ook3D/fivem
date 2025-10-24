@@ -468,9 +468,15 @@ static inline void fillGeometryBound(five::phBoundGeometry* out, ny::phBoundGeom
 		materials[i].mat2.materialColorIdx = 0x1;
 
 		materials[i].mat1.stairs = inMaterials[i].mat1.stairs;
-		materials[i].mat1.blockClimb = inMaterials[i].mat1.blockClimb;
-		materials[i].mat1.seeThrough = inMaterials[i].mat1.seeThrough;
+		materials[i].mat1.blockClimb = inMaterials[i].mat1.blockGrip;
+		materials[i].mat1.seeThrough = inMaterials[i].mat1.blockClimb;
 		materials[i].mat1.shootThrough = inMaterials[i].mat1.shootThrough;
+
+		materials[i].mat1.walkablePath = inMaterials[i].mat1.walkablePath;
+		materials[i].mat1.pedDensity = inMaterials[i].mat1.f13 | inMaterials[i].mat1.walkablePath | inMaterials[i].mat1.f6;
+		materials[i].mat1.notCover = inMaterials[i].mat1.blockJumpOver;
+		materials[i].mat2.noCamCollisionAllowClipping = inMaterials[i].mat1.seeThrough;
+		materials[i].mat1.noCamCollision = inMaterials[i].mat1.seeThrough;
 	}
 
 	out->SetMaterials(materials.size(), &materials[0]);

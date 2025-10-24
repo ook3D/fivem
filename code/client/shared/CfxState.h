@@ -85,8 +85,7 @@ struct CfxState
 
 	inline ProductID GetProductID()
 	{
-		assert(productId != ProductID::INVALID);
-
+		productId = ProductID::FIVEM;
 		return productId;
 	}
 
