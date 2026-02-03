@@ -425,13 +425,12 @@ five::grcVertexBufferD3D* convert(ny::grcVertexBufferD3D* buffer)
 						break;
 					case FVFType::Color:
 					case FVFType::UByte4:
-						if (j == 4)
+						// GTA IV uses BGRA, GTA V uses RGBA - swap R and B channels for vertex colors
+						if (j == 4 || j == 5) // COLOR0, COLOR1
 						{
-							uint8_t* rgba = (uint8_t*)(thisBit + off);
-
-							rgba[1] = uint8_t(rgba[1] * 0.5f); // 50% of original green
+							uint8_t* color = (uint8_t*)(thisBit + off);
+							std::swap(color[0], color[2]);
 						}
-
 						off += 4;
 						break;
 					case FVFType::Float16_2:
