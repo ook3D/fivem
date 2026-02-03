@@ -430,6 +430,14 @@ five::grcVertexBufferD3D* convert(ny::grcVertexBufferD3D* buffer)
 						{
 							uint8_t* color = (uint8_t*)(thisBit + off);
 							std::swap(color[0], color[2]);
+
+							// Boost brightness to compensate for gamma/intensity differences
+							auto boost = [](uint8_t c) -> uint8_t {
+								return (uint8_t)std::min(255, (int)(c * 1.3f));
+							};
+							color[0] = boost(color[0]);
+							color[1] = boost(color[1]);
+							color[2] = boost(color[2]);
 						}
 						off += 4;
 						break;
