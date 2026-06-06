@@ -7,6 +7,7 @@
 #include <Pool.h>
 #include <EntitySystem.h>
 #include <nutsnbolts.h>
+#include <sysAllocator.h>
 
 #include <algorithm>
 #include <cctype>
@@ -255,6 +256,63 @@ bool GetLightArrayFields(void* drawable, CLightAttr*** outLights, uint16_t** out
 	return true;
 }
 
+using AddAttachedLightsFn = uint32_t (*)(void* entity);
+using RemoveAttachedLightsFn = void (*)(void* entity);
+AddAttachedLightsFn g_addAttachedLights = nullptr;
+RemoveAttachedLightsFn g_removeAttachedLights = nullptr;
+
+constexpr int kEntityFlagsOffset = 0xC0;
+constexpr uint32_t kLightObjectFlag = 0x20;
+
+bool LightRebuildAvailable()
+{
+	return g_addAttachedLights && g_removeAttachedLights;
+}
+
+void SetLightObjectFlag(void* entity, bool on)
+{
+	auto* flags = reinterpret_cast<uint32_t*>(reinterpret_cast<uint8_t*>(entity) + kEntityFlagsOffset);
+	if (on)
+		*flags |= kLightObjectFlag;
+	else
+		*flags &= ~kLightObjectFlag;
+}
+
+void CollectModelInstances(const char* modelName, std::vector<void*>& out)
+{
+	if (!modelName || !modelName[0])
+	{
+		return;
+	}
+
+	rage::fwModelId modelId{};
+	auto target = rage::fwArchetypeManager::GetArchetypeFromHashKey(HashString(modelName), modelId);
+	if (!target)
+	{
+		return;
+	}
+
+	static const char* kPoolNames[] = { "Building", "AnimatedBuilding", "Object", "Dummy Object" };
+	for (const char* poolName : kPoolNames)
+	{
+		auto pool = rage::GetPool<fwEntity>(poolName);
+		if (!pool)
+		{
+			continue;
+		}
+
+		const int size = static_cast<int>(pool->GetSize());
+		for (int i = 0; i < size; ++i)
+		{
+			fwEntity* entity = pool->GetAt(i);
+			if (entity && entity->GetArchetype() == target)
+			{
+				out.push_back(entity);
+			}
+		}
+	}
+}
+
 void ApplyAddLight(void* drawable, const CLightAttr& src)
 {
 	CLightAttr** pLights;
@@ -269,6 +327,7 @@ void ApplyAddLight(void* drawable, const CLightAttr& src)
 	const uint16_t count = *pCount;
 	const uint16_t size = *pSize;
 
+	// Spare capacity: append in place, no reallocation.
 	if (lights && count < size)
 	{
 		lights[count] = src;
@@ -282,7 +341,7 @@ void ApplyAddLight(void* drawable, const CLightAttr& src)
 		return;
 	}
 
-	CLightAttr* nb = static_cast<CLightAttr*>(malloc(sizeof(CLightAttr) * newSize));
+	CLightAttr* nb = static_cast<CLightAttr*>(rage::GetAllocator()->Allocate(sizeof(CLightAttr) * newSize, 16, 0));
 	if (!nb)
 	{
 		return;
@@ -316,7 +375,6 @@ void ApplyRemoveLight(void* drawable, int index)
 		return;
 	}
 
-	// Compact in place; capacity stays the same.
 	for (int i = index; i < count - 1; ++i)
 	{
 		lights[i] = lights[i + 1];
@@ -334,8 +392,9 @@ struct PendingOp
 {
 	PendingKind kind;
 	void* drawable;
-	int index;          // for Remove
-	CLightAttr newLight; // for Add (full bytes incl. vtable, captured on the UI thread)
+	int index;            // for Remove
+	CLightAttr newLight;  // for Add (full bytes incl. vtable, captured on the UI thread)
+	char modelName[128];  // instances to rebuild after the edit
 };
 
 std::mutex g_opMutex;
@@ -355,8 +414,28 @@ void ProcessPendingOps()
 		ops.swap(g_pendingOps);
 	}
 
+	if (ops.empty() || !LightRebuildAvailable())
+	{
+		return;
+	}
+
 	for (const auto& op : ops)
 	{
+		std::vector<void*> instances;
+		CollectModelInstances(op.modelName, instances);
+
+		if (instances.empty())
+		{
+			trace("[LightEditor] no placed instances of '%s' found - skipping edit (would corrupt)\n", op.modelName);
+			continue;
+		}
+
+		for (void* entity : instances)
+		{
+			g_removeAttachedLights(entity);
+		}
+
+		// 2. Mutate the drawable's light array.
 		if (op.kind == PendingKind::Add)
 		{
 			ApplyAddLight(op.drawable, op.newLight);
@@ -364,6 +443,12 @@ void ProcessPendingOps()
 		else
 		{
 			ApplyRemoveLight(op.drawable, op.index);
+		}
+
+		for (void* entity : instances)
+		{
+			g_addAttachedLights(entity);
+			SetLightObjectFlag(entity, true);
 		}
 	}
 }
@@ -1396,6 +1481,35 @@ gizmo::Operation g_prevGizmoOp = gizmo::TRANSLATE;
 static HookFunction hookFunction([]()
 {
 	g_gameViewport = hook::get_address<CViewportGame**>(hook::get_pattern("33 C0 48 39 05 ? ? ? ? 74 2E 48 8B 0D ? ? ? ? 48 85 C9 74 22", 5));
+
+	const uintptr_t moduleBase = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
+
+	{
+		auto p = hook::pattern("48 8B C4 55 53 56 57 41 54 41 55 41 56 41 57 48 8D 68 ? 48 81 EC ? ? ? ? 45 33 E4");
+		if (p.size() == 1)
+		{
+			void* addr = p.get(0).get<void>(0);
+			g_addAttachedLights = reinterpret_cast<AddAttachedLightsFn>(addr);
+			trace("[LightEditor] AddAttachedLights @ +%llX\n", static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(addr) - moduleBase));
+		}
+		else
+		{
+			trace("[LightEditor] AddAttachedLights pattern matched %zu times (need 1) - add/delete disabled\n", p.size());
+		}
+	}
+	{
+		auto p = hook::pattern("48 89 5C 24 08 48 89 6C 24 10 48 89 74 24 18 57 48 83 EC 20 8B 81 C0 00 00 00 A8 20 0F 84 ? ? ? ? 48 8B 69 20 83 E0 DF 89 81 C0 00 00 00");
+		if (p.size() == 1)
+		{
+			void* addr = p.get(0).get<void>(0);
+			g_removeAttachedLights = reinterpret_cast<RemoveAttachedLightsFn>(addr);
+			trace("[LightEditor] RemoveAttachedLights @ +%llX\n", static_cast<unsigned long long>(reinterpret_cast<uintptr_t>(addr) - moduleBase));
+		}
+		else
+		{
+			trace("[LightEditor] RemoveAttachedLights pattern matched %zu times (need 1) - add/delete disabled\n", p.size());
+		}
+	}
 });
 
 static InitFunction initFunction([]()
@@ -1459,21 +1573,31 @@ static InitFunction initFunction([]()
 				return;
 			}
 
+			const bool canEdit = LightRebuildAvailable();
+			if (!canEdit)
+			{
+				ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.5f, 1.0f), "Add/Delete unavailable (light-entity functions not found).");
+			}
+
+			const int addSrcIndex = (g_gizmoTarget >= 0 && g_gizmoTarget < lightCount) ? g_gizmoTarget : 0;
+
+			ImGui::BeginDisabled(!canEdit);
 			if (ImGui::Button("Add Light"))
 			{
-				int srcIndex = (g_gizmoTarget >= 0 && g_gizmoTarget < lightCount) ? g_gizmoTarget : 0;
-				if (CLightAttr* src = GetLight(g_selectedDrawable, srcIndex))
+				if (CLightAttr* src = GetLight(g_selectedDrawable, addSrcIndex))
 				{
 					PendingOp op{};
 					op.kind = PendingKind::Add;
 					op.drawable = g_selectedDrawable;
 					op.newLight = *src;
+					snprintf(op.modelName, sizeof(op.modelName), "%s", g_searchBuffer);
 					QueueOp(op);
 				}
 			}
+			ImGui::EndDisabled();
 			if (ImGui::IsItemHovered())
 			{
-				ImGui::SetTooltip("Appends a copy of Light %d", (g_gizmoTarget >= 0 && g_gizmoTarget < lightCount) ? g_gizmoTarget : 0);
+				ImGui::SetTooltip("Appends a copy of Light %d (rebuilds the model's lights)", addSrcIndex);
 			}
 			ImGui::SameLine();
 			if (ImGui::Button("Save Lights XML"))
@@ -1571,20 +1695,25 @@ static InitFunction initFunction([]()
 					ImGui::Indent();
 
 					{
-						// Delete is temporarily disabled: removing a light crashes
-						// the game (likely the engine still references the array by
-						// the old count/slot). Left visible but inert for now.
-						// ImGui::BeginDisabled();
-						// ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.15f, 0.15f, 1.0f));
-						// ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.20f, 0.20f, 1.0f));
-						// ImGui::Button("Delete this light");
-						// ImGui::PopStyleColor(2);
-						// ImGui::EndDisabled();
-						// if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-						// {
-						// 	ImGui::SetTooltip("Delete is temporarily disabled (crashes the game)");
-						// }
-						// ImGui::Spacing();
+						ImGui::BeginDisabled(!canEdit);
+						ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.55f, 0.15f, 0.15f, 1.0f));
+						ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.70f, 0.20f, 0.20f, 1.0f));
+						if (ImGui::Button("Delete this light"))
+						{
+							PendingOp op{};
+							op.kind = PendingKind::Remove;
+							op.drawable = g_selectedDrawable;
+							op.index = i;
+							snprintf(op.modelName, sizeof(op.modelName), "%s", g_searchBuffer);
+							QueueOp(op);
+						}
+						ImGui::PopStyleColor(2);
+						ImGui::EndDisabled();
+						if (ImGui::IsItemHovered())
+						{
+							ImGui::SetTooltip("Removes Light %d from the drawable (rebuilds the model's lights)", i);
+						}
+						ImGui::Spacing();
 					}
 
 					{
