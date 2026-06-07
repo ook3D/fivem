@@ -6,7 +6,13 @@
 #include <atArray.h>
 #include <grcTexture.h>
 
+#include "YdrExport.h"
+
 #include <cstring>
+#include <cctype>
+#include <vector>
+#include <string>
+#include <Windows.h>
 
 namespace
 {
@@ -314,6 +320,98 @@ static InitFunction initFunction([]()
 			ImGui::Text("Model: %s", modelSearchBuffer);
 			int shaderCount = GetShaderCount(selectedDrawable);
 			ImGui::TextDisabled("%d Shaders found", shaderCount);
+
+			// --- Export edited material params as a binary .ydr ---
+			static std::string materialSaveMessage;
+			if (ImGui::Button("Export .ydr"))
+			{
+				char userProfile[MAX_PATH];
+				DWORD np = GetEnvironmentVariableA("USERPROFILE", userProfile, sizeof(userProfile));
+				if (np == 0 || np >= sizeof(userProfile))
+				{
+					materialSaveMessage = "Error: USERPROFILE not set";
+				}
+				else
+				{
+					const std::string docs = std::string(userProfile) + "\\Documents";
+					const std::string dir = docs + "\\fivem_materials";
+					CreateDirectoryA(docs.c_str(), nullptr);
+					CreateDirectoryA(dir.c_str(), nullptr);
+
+					std::string safeName = modelSearchBuffer[0] ? std::string(modelSearchBuffer) : std::string("model");
+					for (char& c : safeName)
+					{
+						if (!(isalnum((unsigned char)c) || c == '_' || c == '-'))
+							c = '_';
+					}
+					const std::string path = dir + "\\" + safeName + ".ydr";
+
+					// Collect each editable float/vector param's edited value + its offset within the
+					// drawable (== resource virtual offset), into a stable buffer.
+					auto* base = reinterpret_cast<uint8_t*>(selectedDrawable);
+					std::vector<uint8_t> valbuf;
+					struct Tmp { size_t off; size_t pos; size_t size; };
+					std::vector<Tmp> tmp;
+
+					for (int si = 0; si < shaderCount; ++si)
+					{
+						grmShader* sh = GetShader(selectedDrawable, si);
+						if (!sh)
+							continue;
+
+						int pcount = GetShaderParamCount(sh);
+						for (int pp = 0; pp < pcount; ++pp)
+						{
+							size_t sz = 0;
+							switch (GetParamType(sh, pp))
+							{
+								case grcEffectVarType::VT_FLOAT: sz = 4; break;
+								case grcEffectVarType::VT_VECTOR2: sz = 8; break;
+								case grcEffectVarType::VT_VECTOR3: sz = 12; break;
+								case grcEffectVarType::VT_VECTOR4: sz = 16; break;
+								default: continue;
+							}
+
+							float* val = GetParamValueFloat4(sh, pp);
+							if (!val)
+								continue;
+
+							size_t off = reinterpret_cast<uint8_t*>(val) - base;
+							size_t pos = valbuf.size();
+							valbuf.insert(valbuf.end(), reinterpret_cast<uint8_t*>(val), reinterpret_cast<uint8_t*>(val) + sz);
+							tmp.push_back({ off, pos, sz });
+						}
+					}
+
+					if (tmp.empty())
+					{
+						materialSaveMessage = "Error: no editable material parameters found";
+					}
+					else
+					{
+						std::vector<ydrexport::Patch> patches;
+						patches.reserve(tmp.size());
+						for (auto& t : tmp)
+							patches.push_back({ t.off, valbuf.data() + t.pos, t.size });
+
+						int applied = 0;
+						std::string err;
+						if (ydrexport::ExportPatched(modelSearchBuffer, path.c_str(), patches.data(), (int)patches.size(), &applied, err))
+							materialSaveMessage = "Saved: " + path;
+						else
+							materialSaveMessage = "Error: " + err;
+					}
+				}
+			}
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::SetTooltip("Extracts the model's .ydr, patches the edited material params, and writes\n"
+					"%%USERPROFILE%%\\Documents\\fivem_materials\\<model>.ydr");
+			}
+			if (!materialSaveMessage.empty())
+			{
+				ImGui::TextWrapped("%s", materialSaveMessage.c_str());
+			}
 
 			ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 1.0f));
 			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 1.0f));

@@ -22,6 +22,8 @@
 
 #include <Windows.h>
 
+#include "YdrExport.h"
+
 namespace
 {
 constexpr float DEG2RAD = 3.14159265358979323846f / 180.0f;
@@ -1300,168 +1302,6 @@ void TimeFlagsPanel(uint32_t* timeFlags)
 	}
 }
 
-std::string Fxml(float v)
-{
-	char b[32];
-	snprintf(b, sizeof(b), "%.7g", v);
-	return b;
-}
-
-void XmlV3(std::string& o, const char* tag, const float* v)
-{
-	char b[192];
-	snprintf(b, sizeof(b), "   <%s x=\"%s\" y=\"%s\" z=\"%s\" />\n", tag, Fxml(v[0]).c_str(), Fxml(v[1]).c_str(), Fxml(v[2]).c_str());
-	o += b;
-}
-
-void XmlF1(std::string& o, const char* tag, float v)
-{
-	char b[128];
-	snprintf(b, sizeof(b), "   <%s value=\"%s\" />\n", tag, Fxml(v).c_str());
-	o += b;
-}
-
-void XmlU1(std::string& o, const char* tag, unsigned v)
-{
-	char b[96];
-	snprintf(b, sizeof(b), "   <%s value=\"%u\" />\n", tag, v);
-	o += b;
-}
-
-void XmlRGB(std::string& o, const char* tag, const uint8_t* c)
-{
-	char b[96];
-	snprintf(b, sizeof(b), "   <%s r=\"%u\" g=\"%u\" b=\"%u\" />\n", tag, c[0], c[1], c[2]);
-	o += b;
-}
-
-void AppendLightItem(std::string& o, const CLightAttr* l)
-{
-	o += "  <Item>\n";
-
-	XmlV3(o, "Position", l->position);
-	XmlRGB(o, "Colour", l->color);
-	XmlU1(o, "Flashiness", l->flashiness);
-	XmlF1(o, "Intensity", l->intensity);
-	XmlU1(o, "Flags", l->flags);
-	XmlU1(o, "BoneId", l->boneId);
-
-	{
-		char b[64];
-		snprintf(b, sizeof(b), "   <Type>%s</Type>\n", LightTypeName(l->lightType));
-		o += b;
-	}
-
-	XmlU1(o, "GroupId", l->groupId);
-	XmlU1(o, "TimeFlags", l->timeFlags);
-	XmlF1(o, "Falloff", l->falloff);
-	XmlF1(o, "FalloffExponent", l->falloffExponent);
-	XmlV3(o, "CullingPlaneNormal", l->cullingPlane);
-	XmlF1(o, "CullingPlaneOffset", l->cullingPlane[3]);
-	XmlU1(o, "Unknown45", l->unk1);
-	XmlU1(o, "Unknown46", l->unk2);
-	XmlF1(o, "VolumeIntensity", l->volumeIntensity);
-	XmlF1(o, "VolumeSizeScale", l->volumeSizeScale);
-	XmlRGB(o, "VolumeOuterColour", l->volumeOuterColor);
-	XmlU1(o, "LightHash", l->lightHash);
-	XmlF1(o, "VolumeOuterIntensity", l->volumeOuterIntensity);
-	XmlF1(o, "CoronaSize", l->coronaSize);
-	XmlF1(o, "VolumeOuterExponent", l->volumeOuterExponent);
-	XmlU1(o, "LightFadeDistance", l->lightFadeDistance);
-	XmlU1(o, "ShadowBlur", l->shadowBlur);
-	XmlU1(o, "ShadowFadeDistance", l->shadowFadeDistance);
-	XmlU1(o, "SpecularFadeDistance", l->specularFadeDistance);
-	XmlU1(o, "VolumetricFadeDistance", l->volumetricFadeDistance);
-	XmlF1(o, "ShadowNearClip", l->shadowNearClip);
-	XmlF1(o, "CoronaIntensity", l->coronaIntensity);
-	XmlF1(o, "CoronaZBias", l->coronaZBias);
-	XmlV3(o, "Direction", l->direction);
-	XmlV3(o, "Tangent", l->tangent);
-	XmlF1(o, "ConeInnerAngle", l->coneInnerAngle);
-	XmlF1(o, "ConeOuterAngle", l->coneOuterAngle);
-	XmlV3(o, "Extent", l->extents);
-
-	if (l->projectedTextureHash == 0)
-	{
-		o += "   <ProjectedTextureHash />\n";
-	}
-	else
-	{
-		char b[64];
-		snprintf(b, sizeof(b), "   <ProjectedTextureHash>hash_%08x</ProjectedTextureHash>\n", l->projectedTextureHash);
-		o += b;
-	}
-
-	o += "  </Item>\n";
-}
-
-std::string BuildLightsXml(void* drawable, int lightCount)
-{
-	std::string o;
-	o.reserve(2048);
-	o += "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
-	o += "<Lights>\n";
-	for (int i = 0; i < lightCount; ++i)
-	{
-		const CLightAttr* l = GetLight(drawable, i);
-		if (l)
-		{
-			AppendLightItem(o, l);
-		}
-	}
-	o += "</Lights>\n";
-	return o;
-}
-
-// Writes the XML to %USERPROFILE%\Documents\fivem_lights\<model>.lights.xml.
-// On success outResult holds the full path; on failure it holds an error.
-bool SaveLightsXml(const std::string& xml, const std::string& modelName, std::string& outResult)
-{
-	char userProfile[MAX_PATH];
-	DWORD n = GetEnvironmentVariableA("USERPROFILE", userProfile, sizeof(userProfile));
-	if (n == 0 || n >= sizeof(userProfile))
-	{
-		outResult = "USERPROFILE not set";
-		return false;
-	}
-
-	const std::string docs = std::string(userProfile) + "\\Documents";
-	const std::string dir = docs + "\\fivem_lights";
-	CreateDirectoryA(docs.c_str(), nullptr);
-	CreateDirectoryA(dir.c_str(), nullptr);
-
-	std::string safeName = modelName.empty() ? "model" : modelName;
-	for (char& c : safeName)
-	{
-		if (!(isalnum((unsigned char)c) || c == '_' || c == '-'))
-		{
-			c = '_';
-		}
-	}
-
-	const std::string path = dir + "\\" + safeName + ".lights.xml";
-
-	HANDLE h = CreateFileA(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (h == INVALID_HANDLE_VALUE)
-	{
-		outResult = "Failed to create file: " + path;
-		return false;
-	}
-
-	DWORD written = 0;
-	BOOL ok = WriteFile(h, xml.data(), static_cast<DWORD>(xml.size()), &written, nullptr);
-	CloseHandle(h);
-
-	if (!ok || written != xml.size())
-	{
-		outResult = "Write failed: " + path;
-		return false;
-	}
-
-	outResult = path;
-	return true;
-}
-
 char g_searchBuffer[256] = "";
 void* g_selectedDrawable = nullptr;
 std::string g_lastSaveMessage;
@@ -1600,13 +1440,66 @@ static InitFunction initFunction([]()
 				ImGui::SetTooltip("Appends a copy of Light %d (rebuilds the model's lights)", addSrcIndex);
 			}
 			ImGui::SameLine();
-			if (ImGui::Button("Save Lights XML"))
+			if (ImGui::Button("Export .ydr"))
 			{
-				std::string xml = BuildLightsXml(g_selectedDrawable, lightCount);
-				std::string result;
-				g_lastSaveMessage = SaveLightsXml(xml, g_searchBuffer, result)
-					? ("Saved: " + result)
-					: ("Error: " + result);
+				char userProfile[MAX_PATH];
+				DWORD np = GetEnvironmentVariableA("USERPROFILE", userProfile, sizeof(userProfile));
+				if (np == 0 || np >= sizeof(userProfile))
+				{
+					g_lastSaveMessage = "Error: USERPROFILE not set";
+				}
+				else if (g_lightArrayOffset < 0)
+				{
+					g_lastSaveMessage = "Error: light array offset unknown";
+				}
+				else
+				{
+					const std::string docs = std::string(userProfile) + "\\Documents";
+					const std::string dir = docs + "\\fivem_lights";
+					CreateDirectoryA(docs.c_str(), nullptr);
+					CreateDirectoryA(dir.c_str(), nullptr);
+
+					std::string safeName = g_searchBuffer[0] ? std::string(g_searchBuffer) : std::string("model");
+					for (char& c : safeName)
+					{
+						if (!(isalnum((unsigned char)c) || c == '_' || c == '-'))
+							c = '_';
+					}
+					const std::string path = dir + "\\" + safeName + ".ydr";
+
+					// Snapshot the live (edited) lights contiguously.
+					std::vector<CLightAttr> live(lightCount);
+					bool okGather = true;
+					for (int i = 0; i < lightCount; ++i)
+					{
+						CLightAttr* l = GetLight(g_selectedDrawable, i);
+						if (!l)
+						{
+							okGather = false;
+							break;
+						}
+						live[i] = *l;
+					}
+
+					if (!okGather)
+					{
+						g_lastSaveMessage = "Error: failed to read lights";
+					}
+					else
+					{
+						std::string err;
+						if (ydrexport::ExportLights(g_searchBuffer, path.c_str(), (size_t)g_lightArrayOffset,
+							live.data(), lightCount, sizeof(CLightAttr), err))
+							g_lastSaveMessage = "Saved: " + path;
+						else
+							g_lastSaveMessage = "Error: " + err;
+					}
+				}
+			}
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::SetTooltip("Extracts the model's .ydr, patches the edited lights (add/remove supported),\n"
+					"and writes %%USERPROFILE%%\\Documents\\fivem_lights\\<model>.ydr");
 			}
 			if (!g_lastSaveMessage.empty())
 			{
