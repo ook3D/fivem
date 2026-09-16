@@ -1,7 +1,7 @@
 /*
- * This file is part of the CitizenFX project - http://citizen.re/
+ * This file is part of the Cfx project - https://cfx.re/
  *
- * See LICENSE and MENTIONS in the root of the source tree for information
+ * See LICENSE in the root of the source tree for information
  * regarding licensing.
  */
 
@@ -410,7 +410,7 @@ public:
 #endif
 		fwEvent<NetLibrary*> OnNetLibraryCreate;
 
-	fwEvent<int /* build */, int /* pure level */, std::wstring /* pool sizes increase request settings */, bool /* replace executable when enforcing game build */> OnRequestBuildSwitch;
+	fwEvent<int /* build */, int /* pure level */, std::wstring /* pool sizes increase request settings */, int /* default game build (exe) */> OnRequestBuildSwitch;
 
 	fwEvent<const char*> OnAttemptDisconnect;
 

@@ -5,12 +5,17 @@ set GAME=%1
 SET UI_BUNDLE=cfx-ui-%GAME%.zip
 SET UI_BIG_BUNDLE=cfx-ui-%GAME%_big.zip
 
+set URL_FIVE=https://downloads.cfx-services.net/prod/01a05c85-903a-7305-87b3-e5d7ca3caa60/cfx-ui-five.zip
+set URL_FIVE_BIG=https://downloads.cfx-services.net/prod/01a05c85-97ee-75e3-aba2-edc18524fa29/cfx-ui-five_big.zip
+set URL_RDR3=https://downloads.cfx-services.net/prod/01a05c85-9b14-7dd1-ae39-44586bf15e5a/cfx-ui-rdr3.zip
+set URL_RDR3_BIG=https://downloads.cfx-services.net/prod/01a05c85-9ddc-751a-b3c7-7627feac5392/cfx-ui-rdr3_big.zip
+
 if "%GAME%"=="five" (
-    set UI_URL=https://downloads.cfx-services.net/prod/019e6f02-87a9-76ec-86de-c637aee18c01
-    set UI_BIG_URL=https://downloads.cfx-services.net/prod/019e6f02-8c79-7d6d-acdf-5b874698c91c
+    set UI_URL=%URL_FIVE%
+    set UI_BIG_URL=%URL_FIVE_BIG%
 ) else if "%GAME%"=="rdr3" (
-    set UI_URL=https://downloads.cfx-services.net/prod/019e6f02-8e48-7f30-9339-bc6b1fe0f6d3
-    set UI_BIG_URL=https://downloads.cfx-services.net/prod/019e6f02-90c5-7499-975a-88da5cfc8322
+    set UI_URL=%URL_RDR3%
+    set UI_BIG_URL=%URL_RDR3_BIG%
 ) else (
     echo Invalid game specified: %GAME%
     exit /b 1
