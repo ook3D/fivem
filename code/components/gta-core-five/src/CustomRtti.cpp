@@ -23,29 +23,32 @@ static hook::cdecl_stub<void*(void*, uint16_t)> getSyncTreeForType([]()
 });
 
 
-uint32_t ReadHashUnsafe(void* vtableEntryPtr)
+uint32_t TryReadHash(void* vtableEntryPtr)
 {
-	void* functionPtr = *(void**)vtableEntryPtr;
-	uint8_t* funcByteCode = (uint8_t*)functionPtr;
+	// These are speculative RTTI slots and may contain data instead of function pointers.
+	void* functionPtr;
+	if (!ReadProcessMemory(GetCurrentProcess(), vtableEntryPtr, &functionPtr, sizeof(functionPtr), nullptr))
+	{
+		return 0;
+	}
+
+	uint8_t funcByteCode[7];
+	if (!ReadProcessMemory(GetCurrentProcess(), functionPtr, funcByteCode, sizeof(funcByteCode), nullptr))
+	{
+		return 0;
+	}
 
 	// Corresponds to "mov eax, cs:dword_.* ; retn" assembly.
 	if (funcByteCode[0] == 0x8B && funcByteCode[1] == 0x05 && funcByteCode[6] == 0xC3)
 	{
-		uint32_t* hashAddress = hook::get_address<uint32_t*>(functionPtr, 2, 6);
-		return *hashAddress;
-	}
-	return 0;
-}
-
-uint32_t TryReadHash(void* vtableEntryPtr)
-{
-	// We are trying to read arbitrary memory address. So access violation may occur.
-	__try
-	{
-		return ReadHashUnsafe(vtableEntryPtr);
-	}
-	__except (EXCEPTION_EXECUTE_HANDLER)
-	{
+		int32_t displacement;
+		memcpy(&displacement, funcByteCode + 2, sizeof(displacement));
+		auto hashAddress = reinterpret_cast<uintptr_t>(functionPtr) + 6 + displacement;
+		uint32_t hash;
+		if (ReadProcessMemory(GetCurrentProcess(), reinterpret_cast<void*>(hashAddress), &hash, sizeof(hash), nullptr))
+		{
+			return hash;
+		}
 	}
 	return 0;
 }
