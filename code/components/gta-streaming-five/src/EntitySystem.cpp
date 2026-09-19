@@ -309,7 +309,7 @@ const rage::fwModelId& rage::fwArchetypeManager::LookupModelId(fwArchetype* arch
 		// There are so many layers of hacks and workarounds which aren't worth investigating for
 		// now, so just accept that we will be given a few invalid archetypes.
 
-		trace("Looking up invalid archetype pointer (maybe %08X or %08X)\n", archetype->hash, archetype->hashCopy);
+		trace("Looking up invalid archetype pointer (%p)\n", static_cast<void*>(archetype));
 
 		return InvalidModelId;
 	}
