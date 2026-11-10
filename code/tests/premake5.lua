@@ -35,7 +35,8 @@
 		{
 			'shared/',
 			'include/',
-			'../client/citicore/'
+			'../client/citicore/',
+			'../components/citizen-server-impl/include/'
 		}
 
 		targetname 'CitiTest'
